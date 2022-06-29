@@ -1,110 +1,56 @@
 %% Settings
 clear all
 close all
-% addpath('/home/brunobian/Documentos/toolbox/my_functions/');
-% addpath('/home/brunobian/Documentos/toolbox/my_functions/coords/');
-eeglabpath  = '/home/brunobian/Documents/Repos/eeglab14_1_1b';
+
+eeglabpath  = '/data/brunobian/Documents/Repos/eeglab14_1_1b';
 addpath(genpath(eeglabpath),'-end'); 
-ftpath      = '/home/brunobian/Documents/Repos/fieldtrip-20180513';
+ftpath      = '/data/brunobian/Documents/Repos/fieldtrip-20180513';
 addpath(genpath(ftpath),'-end'); 
 
-% cstpath = '/home/brunobian/Documents/Repos/corregistro/Analysis_bb/2020/';
-cstpath = '/media/brunobian/DATABRUNO/corregistro/Analysis_bb/2020/';
+cstpath = '/data/brunobian/Documents/Repos/coregistration2022-analyses/';
 addpath(genpath(cstpath),'-end'); 
 
-clear fp; fp = FP_EEGanalysis2020;
+clear fp; fp = FP_EEGanalysis;
 
 eeglab
 
-% datapath = '/media/brunobian/ExtraDrive1/Co-registro_2018/Data/';
-datapath = '/media/brunobian/DATABRUNO/Co-registro_2018/Data/';
+datapath = [cstpath '/data/'];
 cd(datapath)
-%% Generate ERPs per subj
-clear fp; fp = FP_EEGanalysis2020;
 
-[BL_range, ERP, data_filtros, win, dist, zapato] = fp.initVars();
-propCorrectas = []; 
+savePath = [cstpath '/figs/'];
+%% Calculate ERPs within subj
+BL_range = [-200 0];
+ERP = []; 
 
-fs = {'conICA','Theta','AlphaLow','AlphaHigh','Alpha','Beta','remef'};
+fs = {'broadband','Theta','Alpha','Beta'};
 for iFolder = 1
-folder = ['11-epochedFirstPassCausal/' fs{iFolder} '/'];
-folderOut = ['12-edited_forERPs/' fs{iFolder} '/'];
+folder = [datapath fs{iFolder} '/'];
 
 names  = fp.loadSubjects(folder, 1, 0, '.set');
-%for su=1:length(names)
-indSujs = [2:3 5:12 14:15 17:24];
+indSujs = 1:length(names);
 for su = indSujs 
 
-    fprintf('%5s ---> Calculando ERPs...\n', names{su})
+    fprintf('%5s ---> Generate ERPs...\n', names{su})
 
-    EEG = pop_loadset([datapath folder names{su}]);
-    EEG = fp.addIndProv(EEG);
-    
+    EEG = pop_loadset([folder names{su}]);
     DATA = EEG.info.DATA;
-    propCorrectas = [propCorrectas mean([DATA.correcta])];
 
-    EEG = pop_select(EEG,'channel', 1:128);
-    EEG = eeg_checkset( EEG );
-
-    EEG = pop_select(EEG, 'time', [-.2 .6]);
-%     EEG = pop_rmbase(EEG, [-100 -50]);
-    EEG = pop_rmbase(EEG, [-100 0]);
-
-    %%% Filter %%%%
-    if strcmpi(fs{iFolder}, 'conICA')
-        [gramFilt, voltFilt, durFilt, filtData, indbadepoch, EEG] = fp.filter(EEG, su);
-        save([datapath folderOut '../filtros/' names{su}(1:end-4)], 'indbadepoch','voltFilt');        
-    else 
-        load([datapath folderOut '../filtros/' names{su}(1:end-4)]);
-        for i = 1:length(EEG.epoch)
-            EEG.epoch(i).filter = indbadepoch(i);
-        end
-    end
-
-    armarERP = 1;
     campos  = {'prevFixDur','fixDur','saccDur', 'pred',  'predNext',...
                'predPrev', 'pred_type', 'sntc','posAbs','pre_post', ...
                'posRel', 'all', 'fixRank'};
-    campos  = {'pred_type'};
-    if armarERP
-        for i = 1:length(campos)
-            ERP = fp.generateErp(EEG, DATA, ERP, su, indbadepoch, win, campos{i}, voltFilt);
-        end
-%         zapato = fp.generateZapato(EEG, 115, indbadepoch, zapato);
+    campos = {'pred'};
+    for i = 1:length(campos)
+        ERP = fp.generateErp(EEG, ERP, su, campos{i});
     end
-    guardar = 0;
-    if guardar
-        EEG = pop_select(EEG, 'trial',find([EEG.epoch.filter]));
-        pop_saveset(EEG, [datapath folderOut names{su}]);
-    end
-    dimigenFig = 1;
-    if dimigenFig
-        elects = 37:44;
-
-        if su==indSujs(1)
-            im= []; pfixDur=[]; fixDur=[]; nfixDur=[];
-        end
-        
-        tmp = [EEG.epoch(indbadepoch).prevFixDur];
-        pfixDur = [pfixDur tmp];
-        
-        tmp = [EEG.epoch(indbadepoch).fixDur];
-        fixDur = [fixDur tmp];
-        
-        tmp = [EEG.epoch(indbadepoch).nextFixDur];
-        nfixDur = [nfixDur tmp];
-        
-        tmp = squeeze(nanmean(EEG.data(elects,:,indbadepoch),1));
-        im = cat(2, im, tmp);
-    end
+    
+    elects = 37:44;
+    if su==indSujs(1); erpFig=struct(); end
+    erpFig = fp.dimigenFig(EEG, elects, erpFig);        
 end
 end
 
-if armarERP
-    ERP([1 4 13 16])=[];
-end
 disp('LISTO!!')
-%% Calculo erp dif pre-post
+%% Calculate ERPs dif pre-post 
 for i = 1:length(ERP)
     posrel   = 0;
     pre_post = 0;
@@ -176,7 +122,7 @@ for i = 1:length(ERP)
     end
     
 end
-%% Calculo ERPs totales
+%% Calculate ERPs across subjs 
 % [BL_range, ~, data_filtros, win,~] = fp.initVars();
 %load ERP_freq
 % load DATA
@@ -218,20 +164,32 @@ for c = 1:length(campos)
         erp.(camp).(Nivel).Ntr  = N;
     end 
 end
-save('erp_totales','erp')
-% save('erp_totales','erp')
 disp('listo!!')
 
-%% Load erps
-% load('erp_Theta')
-% load('erp_AlphaLow')
-% load('erp_AlphaHigh')
-% load('erp_Beta')
-load('erp_totales')
+%% Fig 0:  pred distribution
 
-savePath = '/media/brunobian/DATABRUNO/Co-registro_2018/Data/figs/';
+pred = [EEG.epoch.pred];
+predProv   = pred([EEG.epoch.sntType]==0);
+predCommon = pred([EEG.epoch.sntType]==1);
 
-%% Fig 0:  ERP clásicos (all)
+[h1, x1] = hist(predProv);
+[h2, x2] = hist(predCommon);
+
+figure(8)
+hold on
+l1 = plot(x1,h1, 'LineWidth',2);
+l2 = plot(x2,h2, 'LineWidth',2);
+legend([l1 l2], 'Proverb', 'Common')
+xlabel('logit(pred)')
+% ylim([0 320])
+
+% limites = [-1.6128   -1.2788   -0.6090    1.5798];
+% for i = 1:length(limites)
+%     plot([limites(i) limites(i)], [0 600], '--k')
+% end
+
+hold off
+%% Fig 0:  ERP (grand average)
 errorbars = 1;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -267,7 +225,7 @@ for ind = 1:length(indch)
 end
 legend([h1], n1)
 f=getframe(gca);
-%% Fig 1:  ERP clásicos vs pred 
+%% Fig 1:  ERP vs pred 
 errorbars = 1;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -310,7 +268,7 @@ end
 legend([h1 h2 h3], n1, n2, n3)
 f=getframe(gca);
 % saveas(gcf, [savePath 'ERP_pred.svg'])
-%% Fig 2:  ERP clásicos vs type
+%% Fig 2:  ERP vs type
 errorbars = 1;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -343,7 +301,7 @@ end
 legend([h1 h2], n1,n2)
 f=getframe(gca);
 % saveas(gcf, [savePath 'ERP_type.svg'])
-%% Fig 3:  ERP clásicos vs type-pred 
+%% Fig 3:  ERP vs type-pred 
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -355,8 +313,8 @@ ceros = zeros(length(erp.times.clasicos));
 x_lim=[-100 600];
 y_lim=[-3 3];
 for ind = 1:length(indch)
-%     subplot(3,3,ind)
-    figure(4*10+ind);clf
+    subplot(3,3,ind)
+%     figure(4*10+ind);clf
     set(gcf,'Color','w')
     hold on
         title(UseChan(ind))
@@ -382,10 +340,10 @@ for ind = 1:length(indch)
         legend([h1 h2 h3 h4], n1,n2,n3,n4)
         f=getframe(gca);
     end
-    saveas(gcf, [savePath 'FRP_pred/ERP_pred-type' UseChan{ind} '.svg'])
+%     saveas(gcf, [savePath 'FRP_pred/ERP_pred-type' UseChan{ind} '.svg'])
 end
 % saveas(gcf, [savePath 'ERP_pred-type.svg'])
-%% Fig 4:  ERP clásicos vs predNext
+%% Fig 4:  ERP vs predNext
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -419,7 +377,7 @@ for ind = 1:length(indch)
     ylim(y_lim)
 end
 legend([h1 h2 h3], n1,n2,n3)
-%% Fig 5:  ERP clásicos vs predPrev
+%% Fig 5:  ERP vs predPrev
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -452,7 +410,7 @@ for ind = 1:length(indch)
     ylim(y_lim)
 end
 legend([h1 h2 h3], n1, n2, n3)
-%% Fig 6:  ERP clásicos vs FixDur
+%% Fig 6:  ERP vs FixDur
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -486,7 +444,7 @@ for ind = 1:length(indch)
 end
 %legend([h1 h2 ], n1, n2)
 legend([h1 h2 h3], n1, n2, n3)
-%% Fig 7:  ERP clásicos vs SaccDur
+%% Fig 7:  ERP vs SaccDur
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -520,30 +478,7 @@ for ind = 1:length(indch)
 end
 % legend([h1 h2 ], n1, n2)
 legend([h1 h2 h3], n1, n2, n3)
-%% Fig 7:  pred distribution
-
-pred = [EEG.epoch.pred];
-predProv   = pred([EEG.epoch.sntType]==0);
-predCommon = pred([EEG.epoch.sntType]==1);
-
-[h1, x1] = hist(predProv);
-[h2, x2] = hist(predCommon);
-
-figure(8)
-hold on
-l1 = plot(x1,h1, 'LineWidth',2);
-l2 = plot(x2,h2, 'LineWidth',2);
-legend([l1 l2], 'Proverb', 'Common')
-xlabel('logit(pred)')
-% ylim([0 320])
-
-% limites = [-1.6128   -1.2788   -0.6090    1.5798];
-% for i = 1:length(limites)
-%     plot([limites(i) limites(i)], [0 600], '--k')
-% end
-
-hold off
-%% Fig 8:  ERP clásicos vs type-PrePost 
+%% Fig 8:  ERP vs type-PrePost 
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -579,7 +514,7 @@ for ind = 1:length(indch)
 end
 legend([h1 h2 h3 h4], n1,n2,n3,n4)
 % legend([h1 h2], n1,n2)
-%% Fig 8:  ERP clásicos vs type-DifPrePost 
+%% Fig 8:  ERP vs type-DifPrePost 
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -611,7 +546,7 @@ for ind = 1:length(indch)
 end
 legend([h1 h2], n1,n2)
 % legend([h1 h2], n1,n2)
-%% Fig 9:  ERP clásicos vs posAbs 
+%% Fig 9:  ERP vs posAbs 
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -650,7 +585,7 @@ for ind = 1:length(indch)
     ylim(y_lim)
 end
 legend([h1 h2 h3 h4 h5 h6], n1,n2,n3,n4,n5,n6)
-%% Fig 10:  ERP clásicos vs posRel
+%% Fig 10: ERP vs posRel
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -697,7 +632,7 @@ for ind = 1:length(indch)
 end
 legend([h1 h2 h3 h4 h5], n1,n2,n3,n4,n5)
 % legend([h1 h3 h5], n1,n3,n5)
-%% Fig 11:  mean power vs posRel
+%% Fig 11: mean power vs posRel
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -767,7 +702,7 @@ for ind = 1:length(indch)
         xlim(x_lim)
     box on
 end
-%% Fig 12 topoplot posRel_tipo
+%% Fig 12: topoplot posRel_tipo
 campos_rel = {'pos_m4' 'pos_m3' 'pos_m2' 'pos_m1' 'pos_0' 'pos_1' 'pos_2' 'pos_3' 'pos_4'};
 campos_abs = {'pos2'   'pos3'   'pos4'   'pos5'   'pos6'  'pos7'  'pos8'  'pos9' 'pos10'};
 titulos_m = {'RP-4' 'RP-3' 'RP-2' 'RP-1' 'RP' 'RP+1' 'RP+2' 'RP+3' 'RP+4'};
@@ -849,7 +784,7 @@ for j = 1:(length(ts)-1)
     end
 %     saveas(gcf, ['figs/gifTopoTheta/' txt '.png'])
 end
-%% Fig 13 topoplot posRel dif_tipo
+%% Fig 13: topoplot posRel dif_tipo
 
 campos = {'pos_m2' 'pos_m1' 'pos_0' 'pos_1' 'pos_2'};
 titulos = {'-2' '-1' '0' '1' '2'};
@@ -871,7 +806,7 @@ for i = 1:length(campos)
     set(gcf,'Color','w')
 end
 % colorbar
-%% Fig 14 topoplot posAbs dif_tipo
+%% Fig 14: topoplot posAbs dif_tipo
 itV = 0:100:500; %100
 winSize = 100; %50
 for it = itV
@@ -920,8 +855,7 @@ txt = ['diffPosAbs - ' tit];
 sgtitle(txt) 
 print(['figs/TopoFRP/' txt '.eps'],'-depsc2');
 end
-
-%% Fig 15 topoplot fixRank
+%% Fig 15: topoplot fixRank
 campos = {'fix1' 'fix2' 'fix3' 'fix4' 'fix5' 'fix6' 'fix7' 'fix8' 'fix9' 'fix10'};
 titulos = {'1' '2' '3' '4' '5' '6' '7' '8' '9' '10'};
 campos = {'fix1' 'fix3' 'fix5' 'fix7' 'fix9'};
@@ -986,8 +920,7 @@ for j = 1:(length(ts)-1)
     end
 %     saveas(gcf, ['figs/gifTopoTheta/' txt '.png'])
 end
-
-%% Fig 16:  ERP clásicos vs type-predDeciles 
+%% Fig 16: ERP clásicos vs type-predDeciles 
 errorbars = 0;
 clc
 UseChan = {'F3','Fz','F4','C3','Cz','C4','P3','Pz','P4'};
@@ -1025,13 +958,16 @@ end
 legend([h1 h2 h3 h4], n1,n2,n3,n4)
 f=getframe(gca);
 saveas(gcf, [savePath 'ERP_pred-type.svg'])
+%% Fig 17: trials by fixDur (Dimigen 2011)
 
-%% Fig 17: trials by fixDur (1 subj)
+pfixDur = erpFig.pfixDur;
+nfixDur = erpFig.nfixDur;
+fixDur  = erpFig.fixDur;
+im      = erpFig.im;
 
 onsetPrev  = -pfixDur;
 onsetNext  = fixDur;
 insetNNext = nfixDur+onsetNext;
-
 
 [~,ind] = sort(fixDur);
 imSorted = im(:,ind)';
@@ -1078,83 +1014,6 @@ set(gcf,'Color','w')
     hold off
 
 colormap(jet)
-saveas(gcf, [savePath 'erpsByFixDurDimigen.svg'])
-
-%% Fig 18:  Zapato
-data  = zapato.data;
-variable = [zapato.info.fixDur];
-t = zapato.times;
-figure(9);clf
-
-ind0 = [zapato.info.sntType] == 0;
-ind1 = [zapato.info.sntType] == 1;
-
-[counts0, centers0] = hist(variable(ind0),50);
-[counts1, centers1] = hist(variable(ind1),50);
-
-
-% type 0 (proverb)
-subplot(4,2,1:2:5)
-    data0 = data(ind0,:);
-    [~,I0] = sort(variable(ind0));
-    data0 = data0(I0,:);
-    hold on
-        imagesc(t, 1:size(data0,1), data0, [-20 20])
-        plot([0 0], [1 size(data0,1)], 'k--')
-        xlim([min(t), max(t)])
-        ylim([0 size(data0,1)])
-    hold off
-    
-subplot(4,2,7)
-    c0 = counts0/sum(counts0);
-    hold on
-        plot(centers0, c0,'b')
-        legend('Proverb')
-        plot([0 0], [0 max(c0)], 'k--')
-        ylim([0 max(c0)])
-        xlim([min(t), max(t)])
-    hold off
-
-% type 1 (Common)
-subplot(4,2,2:2:6)
-    data1 = data(ind1,:);
-    [~,I1] = sort(variable(ind1));
-    data1 = data1(I1,:);
-    hold on
-        imagesc(zapato.times, 1:size(data1,1), data1, [-20 20])
-        plot([0 0], [1 size(data1,1)], 'k--')
-        xlim([min(t), max(t)])
-        ylim([0 size(data1,1)])
-    hold off
-
-subplot(4,2,8)
-    c1 = counts1/sum(counts1);
-    hold on
-        plot(centers1, c1,'r')
-        legend('Common')
-        plot([0 0], [0 max(c1)], 'k--')
-        ylim([0 max(c1)])
-        xlim([min(t), max(t)])
-    hold off
-    
-%%
-close all
-fix_p = [zapato.info.prevFixDur];
-fix_n = [zapato.info.fixDur];
-
-d = 100000;
-i_cercanas = cercanas(fix_n, fix_p,d);
-
-figure();
-hold on
-    scatter(fix_n(i_cercanas), fix_p(i_cercanas))
-    xlabel('FixDur Pal N')
-    ylabel('FixDur Pal N-1')
-    xlim([0 600])
-    ylim([0 600])
-
-%%
-s = zapato.info(i_cercanas);
-s.words
+% saveas(gcf, [savePath 'erpsByFixDurDimigen.svg'])
 
 
